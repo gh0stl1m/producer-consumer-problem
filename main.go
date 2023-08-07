@@ -1,11 +1,11 @@
 package main
 
 import (
-  "time"
- 	"math/rand"
-  "fmt"
+	"fmt"
+	"math/rand"
+	"time"
 
-  "github.com/fatih/color"
+	"github.com/fatih/color"
 )
 
 const NUMBER_OF_ORDERS = 10
@@ -78,23 +78,48 @@ func builder(producer *producer) {
 	
 	for {
 		currentOrder := buildOrder(i)
+    i = currentOrder.id
 
-    if currentOrder != nil {
+    select {
 
-      i = currentOrder.id
+    case producer.data <- *currentOrder:
+    case quitChan := <-producer.quit:
+      
+      close(quitChan)
+      close(producer.data)
 
-      select {
-
-      case producer.data <- *currentOrder:
-      case quitChan := <-producer.quit:
-        
-        close(quitChan)
-        close(producer.data)
-
-        return
-      }
+      return
     }
 	}
+}
+
+func consumer(producer *producer) {
+
+  for order := range producer.data {
+
+    if order.id <= NUMBER_OF_ORDERS {
+
+      if order.success {
+
+        color.Green(order.message)
+        color.Green("Order #%d was successful", order.id)
+      } else {
+
+        color.Red("Something went wroing with order #%d", order.id)
+      }
+    } else {
+
+      color.Cyan("Stop generating orders")
+      err := producer.Close()
+
+      if err != nil {
+
+        color.Red("Error closing channel")
+      }
+    }
+  }
+
+  
 }
 
 
@@ -103,7 +128,7 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	color.Cyan("----------------------------------")
+	color.Cyan("Generating orders")
 
 	producerInstance := producer{
 		data: make(chan order),
@@ -111,4 +136,8 @@ func main() {
 	}
 	
 	go builder(&producerInstance)
+
+  consumer(&producerInstance)
+
+  color.Cyan("A total of %d orders were created. %d failed and %d were success", total, ordersFailed, ordersMade)
 }
